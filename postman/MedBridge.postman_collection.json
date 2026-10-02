@@ -1,0 +1,193 @@
+{
+  "info": {
+    "name": "MedBridge API",
+    "description": "Requests for every MedBridge endpoint, in demo order. Run the three ingest requests first (LAB, CLINIC, HOSPITAL). Each request has test scripts that check the status code; the ingest and list requests save batchId / patientId into collection variables for the requests that follow.\n\nFile uploads point at sample-data/*. In Postman, set Settings > General > Working directory to the MedBridge project folder, or re-select the file in each ingest request's Body tab.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "batchId", "value": "1" },
+    { "key": "patientId", "value": "1" }
+  ],
+  "item": [
+    {
+      "name": "1. Ingest",
+      "item": [
+        {
+          "name": "Ingest LAB feed (CSV)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "pm.test('Location header points at the batch', () => pm.response.to.have.header('Location'));",
+            "const body = pm.response.json();",
+            "pm.test('counts add up', () => pm.expect(body.successCount + body.failureCount).to.eql(body.totalRecords));",
+            "pm.collectionVariables.set('batchId', body.batchId);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/ingest",
+            "body": { "mode": "formdata", "formdata": [
+              { "key": "file", "type": "file", "src": "sample-data/lab_export.csv" },
+              { "key": "sourceSystem", "type": "text", "value": "LAB" }
+            ] }
+          }
+        },
+        {
+          "name": "Ingest CLINIC feed (JSON)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "pm.collectionVariables.set('batchId', pm.response.json().batchId);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/ingest",
+            "body": { "mode": "formdata", "formdata": [
+              { "key": "file", "type": "file", "src": "sample-data/clinic_feed.json" },
+              { "key": "sourceSystem", "type": "text", "value": "CLINIC" }
+            ] }
+          }
+        },
+        {
+          "name": "Ingest HOSPITAL feed (HL7)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "pm.collectionVariables.set('batchId', pm.response.json().batchId);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/ingest",
+            "body": { "mode": "formdata", "formdata": [
+              { "key": "file", "type": "file", "src": "sample-data/hospital_adt.hl7" },
+              { "key": "sourceSystem", "type": "text", "value": "HOSPITAL" }
+            ] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Batches and errors",
+      "item": [
+        {
+          "name": "Ingestion history",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/batches" }
+        },
+        {
+          "name": "One batch",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/batches/{{batchId}}" }
+        },
+        {
+          "name": "Errors in the last batch (line, field, reason)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('each error has a line number and reason', () => {",
+            "  pm.response.json().content.forEach(e => { pm.expect(e.lineNumber).to.be.a('number'); pm.expect(e.errorMessage).to.be.a('string'); });",
+            "});"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/batches/{{batchId}}/errors" }
+        }
+      ]
+    },
+    {
+      "name": "3. Patients",
+      "item": [
+        {
+          "name": "List patients (paged, sorted)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "const first = pm.response.json().content[0];",
+            "if (first) pm.collectionVariables.set('patientId', first.id);"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/patients?page=0&size=20&sort=lastName,asc" }
+        },
+        {
+          "name": "One patient",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/patients/{{patientId}}" }
+        },
+        {
+          "name": "Original records behind a patient",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/patients/{{patientId}}/sources" }
+        },
+        {
+          "name": "Search by MRN",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/patients/search?mrn=10103" }
+        },
+        {
+          "name": "Source systems",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('three systems', () => pm.expect(pm.response.json().length).to.eql(3));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/source-systems" }
+        }
+      ]
+    },
+    {
+      "name": "4. Error handling",
+      "item": [
+        {
+          "name": "Unknown patient -> 404",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('404 Not Found', () => pm.response.to.have.status(404));",
+            "pm.test('standard error body', () => pm.expect(pm.response.json()).to.have.keys('timestamp','status','error','message','path'));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/patients/999999" }
+        },
+        {
+          "name": "Non-numeric id -> 400",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/patients/abc" }
+        },
+        {
+          "name": "Unknown source system -> 400",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/ingest",
+            "body": { "mode": "formdata", "formdata": [
+              { "key": "file", "type": "file", "src": "sample-data/lab_export.csv" },
+              { "key": "sourceSystem", "type": "text", "value": "PHARMACY" }
+            ] }
+          }
+        },
+        {
+          "name": "Wrong format for the source -> 422",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('422 Unprocessable Entity', () => pm.response.to.have.status(422));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/ingest",
+            "body": { "mode": "formdata", "formdata": [
+              { "key": "file", "type": "file", "src": "sample-data/lab_export.csv" },
+              { "key": "sourceSystem", "type": "text", "value": "CLINIC" }
+            ] }
+          }
+        },
+        {
+          "name": "Unknown URL -> 404",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('404 Not Found', () => pm.response.to.have.status(404));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/nothing-here" }
+        }
+      ]
+    }
+  ]
+}
